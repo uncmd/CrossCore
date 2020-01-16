@@ -1,6 +1,8 @@
 ﻿using Abp;
 using Abp.Application.Services;
+using Abp.Dependency;
 using Castle.DynamicProxy;
+using Castle.MicroKernel.Registration;
 using Core.Http.Client.DynamicProxying;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text;
+using System.Threading.Tasks;
 
 namespace Core.Http.Client.DependencyInjection
 {
@@ -104,10 +106,13 @@ namespace Core.Http.Client.DependencyInjection
             Check.NotNull(type, nameof(type));
             Check.NotNullOrWhiteSpace(remoteServiceConfigurationName, nameof(remoteServiceConfigurationName));
 
-            services.Configure<AbpHttpClientOptions>(options =>
-            {
-                options.HttpClientProxies[type] = new DynamicHttpClientProxyConfig(type, remoteServiceConfigurationName);
-            });
+            //services.Configure<AbpHttpClientOptions>(options =>
+            //{
+            //    options.HttpClientProxies[type] = new DynamicHttpClientProxyConfig(type, remoteServiceConfigurationName);
+            //});
+
+            var options = IocManager.Instance.Resolve<IAbpHttpClientOptions>();
+            options.HttpClientProxies[type] = new DynamicHttpClientProxyConfig(type, remoteServiceConfigurationName);
 
             //use IHttpClientFactory and polly
             services.AddHttpClient(remoteServiceConfigurationName)
@@ -116,37 +121,20 @@ namespace Core.Http.Client.DependencyInjection
                     builder.WaitAndRetryAsync(3, i => TimeSpan.FromSeconds(Math.Pow(2, i))));
 
             var interceptorType = typeof(DynamicHttpProxyInterceptor<>).MakeGenericType(type);
-            services.AddTransient(interceptorType);
+            IocManager.Instance.Register(interceptorType, DependencyLifeStyle.Transient);
 
-            //var interceptorAdapterType = typeof(CastleAbpInterceptorAdapter<>).MakeGenericType(interceptorType);
-
-            //if (asDefaultService)
-            //{
-            //    services.AddTransient(
-            //        type,
-            //        serviceProvider => ProxyGeneratorInstance
-            //            .CreateInterfaceProxyWithoutTarget(
-            //                type,
-            //                (IInterceptor)serviceProvider.GetRequiredService(interceptorAdapterType)
-            //            )
-            //    );
-            //}
-
-            //services.AddTransient(
-            //    typeof(IHttpClientProxy<>).MakeGenericType(type),
-            //    serviceProvider =>
-            //    {
-            //        var service = ProxyGeneratorInstance
-            //            .CreateInterfaceProxyWithoutTarget(
-            //                type,
-            //                (IInterceptor)serviceProvider.GetRequiredService(interceptorAdapterType)
-            //            );
-
-            //        return Activator.CreateInstance(
-            //            typeof(HttpClientProxy<>).MakeGenericType(type),
-            //            service
-            //        );
-            //    });
+            // 使用工厂方法注册接口，返回接口代理
+            IocManager.Instance.IocContainer.Register(
+                Component.For(type)
+                    .UsingFactoryMethod(kernel =>
+                    {
+                        return ProxyGeneratorInstance.CreateResolvableInterfaceProxyWithoutTarget(
+                                type,
+                                null,
+                                (IInterceptor)kernel.Resolve(interceptorType)
+                            );
+                    }).LifestyleTransient()
+                );
 
             return services;
         }

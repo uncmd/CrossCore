@@ -1,0 +1,26 @@
+﻿using Abp.AspNetCore.Mvc.Controllers;
+using Core.Http.Modeling;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace Core.Http.Mvc.ApiExploring
+{
+    [Route("api/abp/api-definition")]
+    public class AbpApiDefinitionController : AbpController, IRemoteService
+    {
+        private readonly IApiDescriptionModelProvider _modelProvider;
+
+        public AbpApiDefinitionController(IApiDescriptionModelProvider modelProvider)
+        {
+            _modelProvider = modelProvider;
+        }
+
+        [HttpGet]
+        public ApplicationApiDescriptionModel Get()
+        {
+            return _modelProvider.CreateApiModel();
+        }
+    }
+}

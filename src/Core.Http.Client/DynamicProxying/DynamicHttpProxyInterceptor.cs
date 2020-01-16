@@ -3,10 +3,12 @@ using Abp.Collections.Extensions;
 using Abp.Dependency;
 using Abp.Extensions;
 using Abp.Threading;
+using Abp.Web.Api.ProxyScripting.Generators;
 using Castle.DynamicProxy;
 using Core.Http.Client.Authentication;
 using Core.Http.Modeling;
-using Core.Http.ProxyScripting.Generators;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -24,7 +26,7 @@ using System.Threading.Tasks;
 
 namespace Core.Http.Client.DynamicProxying
 {
-    public class DynamicHttpProxyInterceptor<TService> : IInterceptor, ITransientDependency
+    public class DynamicHttpProxyInterceptor<TService> : IInterceptor
     {
         // ReSharper disable once StaticMemberInGenericType
         protected static MethodInfo GenericInterceptAsyncMethod { get; }
@@ -34,8 +36,10 @@ namespace Core.Http.Client.DynamicProxying
         protected IDynamicProxyHttpClientFactory HttpClientFactory { get; }
         protected IApiDescriptionFinder ApiDescriptionFinder { get; }
         protected AbpRemoteServiceOptions AbpRemoteServiceOptions { get; }
-        protected AbpHttpClientOptions ClientOptions { get; }
+        protected IAbpHttpClientOptions ClientOptions { get; }
         protected IRemoteServiceHttpClientAuthenticator ClientAuthenticator { get; }
+
+        public IHttpContextAccessor HttpContextAccessor { get; set; }
 
         public ILogger<DynamicHttpProxyInterceptor<TService>> Logger { get; set; }
 
@@ -48,16 +52,16 @@ namespace Core.Http.Client.DynamicProxying
 
         public DynamicHttpProxyInterceptor(
             IDynamicProxyHttpClientFactory httpClientFactory,
-            IOptions<AbpHttpClientOptions> clientOptions,
-            IOptionsSnapshot<AbpRemoteServiceOptions> remoteServiceOptions,
+            IAbpHttpClientOptions clientOptions,
+            AbpRemoteServiceOptions remoteServiceOptions,
             IApiDescriptionFinder apiDescriptionFinder,
             IRemoteServiceHttpClientAuthenticator clientAuthenticator)
         {
             HttpClientFactory = httpClientFactory;
             ApiDescriptionFinder = apiDescriptionFinder;
             ClientAuthenticator = clientAuthenticator;
-            ClientOptions = clientOptions.Value;
-            AbpRemoteServiceOptions = remoteServiceOptions.Value;
+            ClientOptions = clientOptions;
+            AbpRemoteServiceOptions = remoteServiceOptions;
 
             Logger = NullLogger<DynamicHttpProxyInterceptor<TService>>.Instance;
         }
@@ -79,10 +83,7 @@ namespace Core.Http.Client.DynamicProxying
                 }
                 else
                 {
-                    invocation.ReturnValue = JsonConvert.DeserializeObject(
-                        responseAsString,
-                        invocation.Method.ReturnType
-                    );
+                    invocation.ReturnValue = JsonConvert.DeserializeObject(responseAsString, invocation.Method.ReturnType);
                 }
             }
         }
@@ -146,7 +147,7 @@ namespace Core.Http.Client.DynamicProxying
             var versionParam = action.Parameters.FirstOrDefault(p => p.Name == "apiVersion" && p.BindingSourceId == ParameterBindingSources.Path) ??
                                action.Parameters.FirstOrDefault(p => p.Name == "api-version" && p.BindingSourceId == ParameterBindingSources.Query);
 
-            return new ApiVersionInfo(versionParam?.BindingSourceId, apiVersion);
+            return new ApiVersionInfo(ParameterBindingSources.Path, apiVersion);
         }
 
         private string FindBestApiVersion(ActionApiDescriptionModel action)
@@ -169,13 +170,13 @@ namespace Core.Http.Client.DynamicProxying
         protected virtual void AddHeaders(IInvocation invocation, ActionApiDescriptionModel action, HttpRequestMessage requestMessage, ApiVersionInfo apiVersion)
         {
             //API Version
-            if (!apiVersion.Version.IsNullOrEmpty())
-            {
-                //TODO: What about other media types?
-                requestMessage.Headers.Add("accept", $"{MimeTypes.Text.Plain}; v={apiVersion.Version}");
-                requestMessage.Headers.Add("accept", $"{MimeTypes.Application.Json}; v={apiVersion.Version}");
-                requestMessage.Headers.Add("api-version", apiVersion.Version);
-            }
+            //if (!apiVersion.Version.IsNullOrEmpty())
+            //{
+            //    //TODO: What about other media types?
+            //    requestMessage.Headers.Add("accept", $"{MimeTypes.Text.Plain}; v={apiVersion.Version}");
+            //    requestMessage.Headers.Add("accept", $"{MimeTypes.Application.Json}; v={apiVersion.Version}");
+            //    requestMessage.Headers.Add("api-version", apiVersion.Version);
+            //}
 
             //Header parameters
             var headers = action.Parameters.Where(p => p.BindingSourceId == ParameterBindingSources.Header).ToArray();
@@ -208,6 +209,16 @@ namespace Core.Http.Client.DynamicProxying
 
             //X-Requested-With
             requestMessage.Headers.Add("X-Requested-With", "XMLHttpRequest");
+
+            var httpContext = HttpContextAccessor?.HttpContext;
+            if (httpContext != null)
+            {
+                var token = httpContext.GetTokenAsync("access_token").Result;
+                if (!token.IsNullOrEmpty())
+                {
+                    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+            }
         }
 
         private string GetConfiguredApiVersion()

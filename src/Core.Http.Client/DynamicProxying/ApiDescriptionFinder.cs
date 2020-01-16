@@ -100,11 +100,9 @@ namespace Core.Http.Client.DynamicProxying
 
                 var content = await response.Content.ReadAsStringAsync();
 
-                var result = JsonConvert.DeserializeObject(
-                    content,
-                    typeof(ApplicationApiDescriptionModel), SharedJsonSerializerSettings);
+                var result = JsonConvert.DeserializeObject<Abp.Web.Models.AjaxResponse<ApplicationApiDescriptionModel>>(content);
 
-                return (ApplicationApiDescriptionModel)result;
+                return result.Result;
             }
         }
     }

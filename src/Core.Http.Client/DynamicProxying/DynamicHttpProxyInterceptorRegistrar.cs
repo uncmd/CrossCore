@@ -1,8 +1,10 @@
-﻿using Abp.Dependency;
+﻿using Abp.Application.Services;
+using Abp.Dependency;
 using Castle.Core;
 using Castle.MicroKernel;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 
 namespace Core.Http.Client.DynamicProxying
@@ -16,7 +18,10 @@ namespace Core.Http.Client.DynamicProxying
 
         private static void Kernel_ComponentRegistered(string key, IHandler handler)
         {
-            handler.ComponentModel.Interceptors.Add(new InterceptorReference(typeof(DynamicHttpProxyInterceptor<>)));
+            //if (typeof(IApplicationService).GetTypeInfo().IsAssignableFrom(handler.ComponentModel.Implementation))
+            //{
+            //    handler.ComponentModel.Interceptors.Add(new InterceptorReference(typeof(DynamicHttpProxyInterceptor<>)));
+            //}
         }
     }
 }
